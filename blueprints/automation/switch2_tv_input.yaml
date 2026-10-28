@@ -1,0 +1,80 @@
+blueprint:
+  name: Switch 2 Waker - switch TV to the console after wake
+  description: >
+    When the Switch 2 Waker broadcasts the wake packet (from Home Assistant,
+    the physical button, voice or the TV app), optionally turns the TV on and
+    runs your "switch to the Switch's HDMI" actions after a short delay.
+
+
+    Examples for the actions:
+
+    * Most TVs: `media_player.select_source` with the source name, e.g. `HDMI 1`.
+
+    * Android/Google TV with the ADB integration: `androidtv.adb_command` with
+      `am start -a android.intent.action.VIEW -d content://android.media.tv/passthrough/<input id>`
+      (list input ids with `adb shell dumpsys tv_input`).
+  domain: automation
+  source_url: https://github.com/amdydesign/switch2-waker/blob/main/blueprints/automation/switch2_tv_input.yaml
+  input:
+    waking_sensor:
+      name: Waking sensor
+      description: The "Waking" binary sensor of your Switch 2 Waker.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+              integration: esphome
+    tv:
+      name: TV
+      description: Used to skip switching when the TV is off (and to turn it on, if enabled).
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+    turn_on_tv:
+      name: Turn the TV on
+      description: Turn the TV on if it is off.
+      default: false
+      selector:
+        boolean:
+    delay:
+      name: Delay
+      description: Seconds to wait after the wake signal before switching input.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 30
+          unit_of_measurement: s
+    switch_actions:
+      name: Switch input actions
+      description: What to do to show the console (e.g. select HDMI source).
+      default: []
+      selector:
+        action:
+
+mode: restart
+
+variables:
+  tv: !input tv
+  turn_on_tv: !input turn_on_tv
+
+triggers:
+  - trigger: state
+    entity_id: !input waking_sensor
+    from: "off"
+    to: "on"
+
+actions:
+  - if:
+      - "{{ turn_on_tv and states(tv) in ['off', 'standby'] }}"
+    then:
+      - action: media_player.turn_on
+        target:
+          entity_id: !input tv
+        continue_on_error: true
+  - delay:
+      seconds: !input delay
+  - if:
+      - "{{ turn_on_tv or states(tv) not in ['off', 'standby', 'unavailable', 'unknown'] }}"
+    then: !input switch_actions

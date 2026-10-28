@@ -1,0 +1,220 @@
+# Switch 2 Waker - shared logic (used by the device configs).
+# Wakes a sleeping Nintendo Switch 2 by impersonating a paired Joy-Con 2:
+# the ESP32 takes over the Joy-Con's Bluetooth address and broadcasts the
+# same BLE packet the Joy-Con sends when you press HOME.
+#
+# Device configs must define: substitutions (name, friendly_name),
+# esp32 board, and scripts `status_led_on` / `status_led_off`.
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: ${name_add_mac_suffix}
+  project:
+    name: amdydesign.switch2-waker
+    version: "1.0.0"
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          uint8_t mac[6];
+          if (s2_parse_mac(id(joycon_mac).state, mac)) {
+            esp_err_t e = esp_iface_mac_addr_set(mac, ESP_MAC_BT);
+            ESP_LOGI("switch2", "Using Joy-Con BT address %s (err=%d)", id(joycon_mac).state.c_str(), e);
+          } else {
+            ESP_LOGW("switch2", "No Joy-Con saved yet - using factory BT address. Press HOME on a detached Joy-Con 2 nearby, then 'Save captured Joy-Con'.");
+          }
+      # BLE must start only AFTER the BT MAC is overridden
+      - ble.enable:
+      - delay: 3s
+      - lambda: |-
+          uint8_t m[6];
+          esp_read_mac(m, ESP_MAC_BT);
+          id(bt_addr).publish_state(s2_fmt_mac(m));
+
+external_components:
+  - source: github://amdydesign/switch2-waker@main
+    components: [switch2_waker]
+    refresh: 1d
+
+switch2_waker:
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ap:
+    ssid: "Switch2 Waker Setup"
+
+captive_portal:
+
+improv_serial:
+
+esp32_ble:
+  id: ble
+  enable_on_boot: false
+
+esp32_ble_tracker:
+  id: ble_tracker
+  scan_parameters:
+    active: false
+    interval: 100ms
+    window: 100ms
+    continuous: true
+  on_ble_advertise:
+    - then:
+        - lambda: |-
+            id(adv_cnt)++;
+            for (auto &md : x.get_manufacturer_datas()) {
+              if (!(md.uuid == esp32_ble_tracker::ESPBTUUID::from_uint16(0x0553))) continue;
+              std::string hex = "5305";
+              char b[3];
+              for (auto c : md.data) { snprintf(b, sizeof(b), "%02X", c); hex += b; }
+              std::string addr = x.address_str();
+              if (addr == id(cap_addr) && hex == id(cap_data)) continue;
+              id(cap_addr) = addr;
+              id(cap_data) = hex;
+              bool wake = md.data.size() > 9 && md.data[9] == 0x81;
+              id(cap_wake) = wake;
+              ESP_LOGI("switch2", "Nintendo packet from %s: %s (%s)", addr.c_str(), hex.c_str(), wake ? "state 0x81 - wake packet" : "other state");
+              id(last_pkt).publish_state(addr + " " + hex + (wake ? " [0x81 OK]" : " [other]"));
+            }
+
+globals:
+  - id: cap_addr
+    type: std::string
+    initial_value: '""'
+  - id: cap_data
+    type: std::string
+    initial_value: '""'
+  - id: cap_wake
+    type: bool
+    initial_value: "false"
+  - id: adv_cnt
+    type: uint32_t
+    initial_value: "0"
+
+text:
+  - platform: template
+    id: joycon_mac
+    name: "Joy-Con address"
+    icon: mdi:controller
+    optimistic: true
+    restore_value: true
+    mode: text
+    max_length: 17
+    entity_category: config
+  - platform: template
+    id: wake_data
+    name: "Wake packet"
+    icon: mdi:code-brackets
+    optimistic: true
+    restore_value: true
+    mode: text
+    max_length: 100
+    entity_category: config
+
+text_sensor:
+  - platform: template
+    id: last_pkt
+    name: "Last Nintendo packet"
+    icon: mdi:bluetooth-audio
+  - platform: template
+    id: bt_addr
+    name: "BT address"
+    icon: mdi:bluetooth
+    entity_category: diagnostic
+
+binary_sensor:
+  - platform: template
+    id: waking
+    name: "Waking"
+    icon: mdi:nintendo-switch
+    device_class: running
+
+script:
+  - id: wake
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: 'return s2_payload(id(wake_data).state).size() < 12;'
+          then:
+            - logger.log:
+                level: ERROR
+                tag: switch2
+                format: "No wake packet saved - capture your Joy-Con first"
+            - script.stop: wake
+      - esp32_ble_tracker.stop_scan:
+      - binary_sensor.template.publish:
+          id: waking
+          state: ON
+      - script.execute: status_led_on
+      - lambda: |-
+          esp_err_t e = s2_start_adv(s2_payload(id(wake_data).state));
+          ESP_LOGI("switch2", "Broadcasting wake packet (err=%d)", e);
+      - delay: 2s
+      - lambda: 's2_stop_adv();'
+      - script.execute: status_led_off
+      - binary_sensor.template.publish:
+          id: waking
+          state: OFF
+      - esp32_ble_tracker.start_scan:
+
+button:
+  - platform: template
+    id: wake_btn
+    name: "Wake Switch"
+    icon: mdi:nintendo-switch
+    on_press:
+      - script.execute: wake
+  - platform: template
+    name: "Save captured Joy-Con"
+    icon: mdi:content-save
+    entity_category: config
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(cap_wake) && !id(cap_addr).empty();'
+          then:
+            - lambda: |-
+                std::string a = id(cap_addr);
+                for (auto &c : a) c = toupper(c);
+                auto c1 = id(joycon_mac).make_call(); c1.set_value(a); c1.perform();
+                auto c2 = id(wake_data).make_call(); c2.set_value(id(cap_data)); c2.perform();
+                ESP_LOGI("switch2", "Saved Joy-Con %s - restarting", a.c_str());
+            - delay: 1s
+            - button.press: restart_btn
+          else:
+            - logger.log:
+                level: WARN
+                tag: switch2
+                format: "No captured wake packet (state 0x81) yet - press HOME on a detached Joy-Con 2 near the device"
+  - platform: template
+    name: "Forget Joy-Con"
+    icon: mdi:delete
+    entity_category: config
+    on_press:
+      - lambda: |-
+          auto c1 = id(joycon_mac).make_call(); c1.set_value(""); c1.perform();
+          auto c2 = id(wake_data).make_call(); c2.set_value(""); c2.perform();
+      - delay: 1s
+      - button.press: restart_btn
+  - platform: restart
+    id: restart_btn
+    name: "Restart"
+    entity_category: diagnostic
+
+sensor:
+  - platform: template
+    name: "BLE adverts per minute"
+    icon: mdi:bluetooth
+    entity_category: diagnostic
+    update_interval: 60s
+    accuracy_decimals: 0
+    lambda: |-
+      uint32_t v = id(adv_cnt); id(adv_cnt) = 0; return v;

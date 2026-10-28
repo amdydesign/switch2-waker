@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Switch 2 Waker - installer</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root { color-scheme: light dark; --red:#e60012; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: 32px 20px; line-height: 1.55; }
+    h1 { display:flex; align-items:center; gap:12px; margin-bottom: 4px; }
+    h1 span { background: var(--red); color:#fff; border-radius: 10px; padding: 2px 10px; font-size: .7em; }
+    .card { border: 1px solid #8884; border-radius: 16px; padding: 20px; margin: 20px 0; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    esp-web-install-button button, .btn { background: var(--red); color:#fff; border:0; border-radius: 12px; padding: 12px 20px; font-size: 16px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
+    .muted { opacity:.7; font-size:.92em; }
+    code { background:#8882; padding:1px 6px; border-radius:6px; }
+    ol li { margin: 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>Switch 2 Waker <span>ESPHome</span></h1>
+  <p>Wake a sleeping Nintendo Switch 2 from Home Assistant. Plug the ESP32 in with a USB data cable, pick your board and click <b>Install</b>. Works in Chrome / Edge on desktop.</p>
+
+  <div class="card">
+    <div class="row">
+      <div><b>M5Stack Atom Echo</b><br><span class="muted">Button = wake · LED = blue while waking</span></div>
+      <esp-web-install-button manifest="firmware/atom-echo/manifest.json">
+        <button slot="activate">Install</button>
+        <span slot="unsupported">Use Chrome or Edge on a desktop.</span>
+        <span slot="not-allowed">Open this page over HTTPS.</span>
+      </esp-web-install-button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div><b>Generic ESP32</b> (WROOM / DevKitC)<br><span class="muted">BOOT button = wake · LED on GPIO2</span></div>
+      <esp-web-install-button manifest="firmware/esp32-generic/manifest.json">
+        <button slot="activate">Install</button>
+        <span slot="unsupported">Use Chrome or Edge on a desktop.</span>
+        <span slot="not-allowed">Open this page over HTTPS.</span>
+      </esp-web-install-button>
+    </div>
+  </div>
+
+  <h2>After installing</h2>
+  <ol>
+    <li>Enter your Wi-Fi in the installer. Home Assistant will discover <b>Switch 2 Waker</b> - add it.</li>
+    <li>Put the Switch to sleep, detach a Joy-Con 2, press <b>HOME</b> next to the ESP32.</li>
+    <li>When <b>Last Nintendo packet</b> shows <code>[0x81 OK]</code>, press <b>Save captured Joy-Con</b>.</li>
+    <li>Attach the Joy-Con back. <b>Wake Switch</b> now wakes the console.</li>
+  </ol>
+
+  <h2>Extras</h2>
+  <p>
+    <a class="btn" href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Famdydesign%2Fswitch2-waker%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fswitch2_wake_triggers.yaml">Blueprint: wake triggers</a>
+    <a class="btn" href="https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Famdydesign%2Fswitch2-waker%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fswitch2_tv_input.yaml">Blueprint: TV input</a>
+    <a class="btn" href="https://github.com/amdydesign/switch2-waker/releases/latest/download/switch2-waker.apk">Google TV app (APK)</a>
+  </p>
+  <p class="muted">Docs and source: <a href="https://github.com/amdydesign/switch2-waker">github.com/amdydesign/switch2-waker</a> · Wake packet research: <a href="https://github.com/alexvnesta/switch2controller">alexvnesta/switch2controller</a> · Not affiliated with Nintendo.</p>
+</body>
+</html>

@@ -1,0 +1,6 @@
+.esphome/
+.test/
+secrets.yaml
+android/out/
+*.jks
+__pycache__/

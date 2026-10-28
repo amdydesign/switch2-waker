@@ -1,0 +1,67 @@
+blueprint:
+  name: Switch 2 Waker - wake triggers (TV app / webhook + voice)
+  description: >
+    Presses the **Wake Switch** button of your Switch 2 Waker when:
+
+    * the **Switch 2 Google TV app** (or anything else) calls the webhook, and/or
+
+    * you say one of the voice sentences to Assist.
+
+
+    Use the same webhook ID in the Android TV app setup.
+    The webhook works only from your local network.
+  domain: automation
+  source_url: https://github.com/amdydesign/switch2-waker/blob/main/blueprints/automation/switch2_wake_triggers.yaml
+  input:
+    wake_button:
+      name: Wake button
+      description: The "Wake Switch" button of your Switch 2 Waker.
+      selector:
+        entity:
+          filter:
+            - domain: button
+              integration: esphome
+    webhook_id:
+      name: Webhook ID
+      description: >
+        Used by the TV app: http://<home-assistant>:8123/api/webhook/<webhook ID>.
+        Pick something hard to guess.
+      default: switch2_wake
+      selector:
+        text:
+    sentences:
+      name: Voice sentences
+      description: Assist sentences that wake the console. [optional words] and (a|b) alternatives are supported.
+      default:
+        - "(wake up|turn on|start) [the] [nintendo] switch [2]"
+      selector:
+        text:
+          multiple: true
+    response:
+      name: Voice response
+      default: "Waking up the Switch."
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: webhook
+    id: webhook
+    webhook_id: !input webhook_id
+    allowed_methods: [POST, GET]
+    local_only: true
+  - trigger: conversation
+    id: voice
+    command: !input sentences
+
+actions:
+  - action: button.press
+    target:
+      entity_id: !input wake_button
+  - if:
+      - condition: trigger
+        id: voice
+    then:
+      - set_conversation_response: !input response

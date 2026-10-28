@@ -1,0 +1,124 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: Firmware (${{ matrix.device }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [atom-echo, esp32-generic]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build from this commit (local package + component)
+        run: |
+          mkdir -p ci
+          sed 's#- source: github://amdydesign/switch2-waker@main#- source:\n      type: local\n      path: ../components#' switch2-waker.yaml > ci/switch2-waker.yaml
+          sed 's#switch2_waker: github://amdydesign/switch2-waker/switch2-waker.yaml@main#switch2_waker: !include switch2-waker.yaml#' ${{ matrix.device }}.yaml > ci/${{ matrix.device }}.yaml
+      - uses: esphome/build-action@v8.1.0
+        id: esphome
+        with:
+          yaml-file: ci/${{ matrix.device }}.yaml
+          complete-manifest: true
+          release-summary: Switch 2 Waker
+          release-url: https://github.com/${{ github.repository }}
+      - name: Collect
+        run: |
+          mkdir -p out/${{ matrix.device }}
+          cp -r "${{ steps.esphome.outputs.name }}"/* out/${{ matrix.device }}/
+          cp out/${{ matrix.device }}/*.factory.bin switch2-waker-${{ matrix.device }}.factory.bin
+          ls -la out/${{ matrix.device }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.device }}
+          path: |
+            out
+            switch2-waker-${{ matrix.device }}.factory.bin
+
+  apk:
+    name: Google TV app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build APK
+        env:
+          KEYSTORE_B64: ${{ secrets.APK_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.APK_KEYSTORE_PASS }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export KEYSTORE="$RUNNER_TEMP/release.jks" KEY_ALIAS=switch2
+          else
+            unset KEYSTORE_PASS
+            echo "::warning::APK_KEYSTORE_B64 not set - signing with a throwaway key"
+          fi
+          android/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: android/out/switch2-waker.apk
+
+  pages:
+    name: Publish installer (GitHub Pages)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [firmware, apk]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Assemble site
+        run: |
+          mkdir -p site/firmware
+          cp -r docs/* site/
+          for d in atom-echo esp32-generic; do cp -r artifacts/firmware-$d/out/$d site/firmware/; done
+          cp artifacts/apk/switch2-waker.apk site/
+          find site -type f | sort
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deploy
+
+  release:
+    name: GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [firmware, apk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/apk/switch2-waker.apk
+            artifacts/firmware-*/switch2-waker-*.factory.bin
+            blueprints/automation/*.yaml

@@ -1,0 +1,46 @@
+# Switch 2 Waker for a generic ESP32 dev board (ESP32-WROOM / DevKitC).
+# BOOT button (GPIO0) = wake, on-board LED (GPIO2) = on while broadcasting.
+# Change the pins below if your board is different.
+substitutions:
+  name: switch2-waker-esp32
+  friendly_name: Switch 2 Waker
+  name_add_mac_suffix: "true"
+  button_pin: GPIO0
+  led_pin: GPIO2
+
+packages:
+  switch2_waker: github://amdydesign/switch2-waker/switch2-waker.yaml@main
+
+dashboard_import:
+  package_import_url: github://amdydesign/switch2-waker/esp32-generic.yaml@main
+  import_full_config: false
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: ${button_pin}
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    name: "Button"
+    on_click:
+      - script.execute: wake
+
+output:
+  - platform: gpio
+    id: led_out
+    pin: ${led_pin}
+
+script:
+  - id: status_led_on
+    then:
+      - output.turn_on: led_out
+  - id: status_led_off
+    then:
+      - output.turn_off: led_out
