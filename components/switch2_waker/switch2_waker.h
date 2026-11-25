@@ -65,7 +65,11 @@ static esp_err_t s2_start_adv(const std::vector<uint8_t> &payload) {
   p.adv_type = ADV_TYPE_IND;
   p.own_addr_type = BLE_ADDR_TYPE_PUBLIC;
   p.channel_map = ADV_CHNL_ALL;
-  p.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
+  // Keep the connectable ADV_IND type the console expects, but reject
+  // connection requests (empty white list). Otherwise the console can
+  // connect to the ESP32 after waking and block the real Joy-Con until it
+  // is docked again.
+  p.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_WLST;
   return esp_ble_gap_start_advertising(&p);
 }
 
